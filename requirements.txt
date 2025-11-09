@@ -1,0 +1,2 @@
+redis>=4.0.0
+python-toon>=1.0.0

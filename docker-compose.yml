@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  redistoon:
+    build: .
+    image: dreamstack/redistoon:latest
+    container_name: redistoon
+    ports:
+      - "6379:6379"
+    volumes:
+      - redistoon-data:/data
+    restart: unless-stopped
+    command: redis-server --loadmodule /usr/local/lib/redis/modules/redistoon.so
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  redistoon-data:
+    driver: local
