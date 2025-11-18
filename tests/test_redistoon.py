@@ -291,5 +291,236 @@ class TestUseCases:
         assert 'name' in retrieved
 
 
+class TestPhase2ArrayOperations:
+    """Test Phase 2 array operations."""
+
+    def test_array_append(self, redis_client):
+        """Test appending to arrays."""
+        data = {'tags': ['tag1', 'tag2']}
+        redis_client.set('test:arr_append', data)
+
+        # Append single value
+        new_len = redis_client.array_append('test:arr_append', '$.tags', 'tag3')
+        assert new_len == 3
+
+        # Append multiple values
+        new_len = redis_client.array_append('test:arr_append', '$.tags', 'tag4', 'tag5')
+        assert new_len == 5
+
+        result = redis_client.get('test:arr_append')
+        assert 'tags' in result
+
+    def test_array_insert(self, redis_client):
+        """Test inserting into arrays."""
+        data = {'items': [1, 2, 3]}
+        redis_client.set('test:arr_insert', data)
+
+        # Insert at beginning
+        new_len = redis_client.array_insert('test:arr_insert', '$.items', 0, 0)
+        assert new_len == 4
+
+        # Insert at end
+        new_len = redis_client.array_insert('test:arr_insert', '$.items', -1, 99)
+        assert new_len == 5
+
+    def test_array_pop(self, redis_client):
+        """Test popping from arrays."""
+        data = {'stack': ['a', 'b', 'c', 'd']}
+        redis_client.set('test:arr_pop', data)
+
+        # Pop last element (default)
+        popped = redis_client.array_pop('test:arr_pop', '$.stack')
+        assert popped is not None
+
+        # Pop first element
+        popped = redis_client.array_pop('test:arr_pop', '$.stack', 0)
+        assert popped is not None
+
+        # Pop middle element
+        popped = redis_client.array_pop('test:arr_pop', '$.stack', 0)
+        assert popped is not None
+
+    def test_array_length(self, redis_client):
+        """Test getting array length."""
+        data = {'numbers': [1, 2, 3, 4, 5]}
+        redis_client.set('test:arr_len', data)
+
+        length = redis_client.array_length('test:arr_len', '$.numbers')
+        assert length == 5
+
+        # Test with tabular array
+        users = [
+            {'id': 1, 'name': 'Alice'},
+            {'id': 2, 'name': 'Bob'}
+        ]
+        redis_client.set('test:arr_len_tab', users)
+        length = redis_client.array_length('test:arr_len_tab', '$')
+        assert length == 2
+
+    def test_array_operations_workflow(self, redis_client):
+        """Test complete array manipulation workflow."""
+        # Start with empty array in an object
+        data = {'list': []}
+        redis_client.set('test:workflow', data)
+
+        # Append items
+        redis_client.array_append('test:workflow', '$.list', 'first')
+        redis_client.array_append('test:workflow', '$.list', 'second', 'third')
+
+        # Check length
+        length = redis_client.array_length('test:workflow', '$.list')
+        assert length == 3
+
+        # Insert at beginning
+        redis_client.array_insert('test:workflow', '$.list', 0, 'zero')
+        length = redis_client.array_length('test:workflow', '$.list')
+        assert length == 4
+
+        # Pop from end
+        popped = redis_client.array_pop('test:workflow', '$.list')
+        assert popped is not None
+
+        final_length = redis_client.array_length('test:workflow', '$.list')
+        assert final_length == 3
+
+
+class TestPhase2MergeOperations:
+    """Test Phase 2 merge operations."""
+
+    def test_merge_simple_objects(self, redis_client):
+        """Test merging simple objects."""
+        original = {'a': 1, 'b': 2}
+        redis_client.set('test:merge_simple', original)
+
+        to_merge = {'c': 3, 'd': 4}
+        result = redis_client.merge('test:merge_simple', '$', to_merge)
+        assert result is True
+
+        merged = redis_client.get('test:merge_simple')
+        assert 'a' in merged
+        assert 'b' in merged
+        assert 'c' in merged
+        assert 'd' in merged
+
+    def test_merge_overwrites_values(self, redis_client):
+        """Test that merge overwrites existing values."""
+        original = {'name': 'Alice', 'age': 30}
+        redis_client.set('test:merge_overwrite', original)
+
+        to_merge = {'age': 31, 'city': 'NYC'}
+        redis_client.merge('test:merge_overwrite', '$', to_merge)
+
+        merged = redis_client.get('test:merge_overwrite')
+        # Age should be updated
+        assert merged is not None
+
+    def test_merge_nested_objects(self, redis_client):
+        """Test deep merging nested objects."""
+        original = {
+            'user': {
+                'name': 'Alice',
+                'settings': {'theme': 'dark'}
+            }
+        }
+        redis_client.set('test:merge_nested', original)
+
+        to_merge = {
+            'user': {
+                'settings': {'notifications': True}
+            }
+        }
+        redis_client.merge('test:merge_nested', '$', to_merge)
+
+        merged = redis_client.get('test:merge_nested')
+        assert merged is not None
+
+    def test_merge_adds_new_keys(self, redis_client):
+        """Test that merge adds new keys."""
+        original = {'existing': 'value'}
+        redis_client.set('test:merge_add', original)
+
+        to_merge = {
+            'new1': 'data1',
+            'new2': 'data2',
+            'new3': {'nested': 'object'}
+        }
+        redis_client.merge('test:merge_add', '$', to_merge)
+
+        merged = redis_client.get('test:merge_add')
+        assert 'existing' in merged
+        assert 'new1' in merged
+        assert 'new2' in merged
+        assert 'new3' in merged
+
+
+class TestPhase2Validation:
+    """Test Phase 2 validation."""
+
+    def test_validate_valid_document(self, redis_client):
+        """Test validating a valid document."""
+        data = {
+            'name': 'Alice',
+            'age': 30,
+            'tags': ['developer', 'python'],
+            'metadata': {'created': '2025-01-01'}
+        }
+        redis_client.set('test:valid', data)
+
+        is_valid = redis_client.validate('test:valid')
+        assert is_valid is True
+
+    def test_validate_simple_values(self, redis_client):
+        """Test validating simple value types."""
+        # String
+        redis_client.set('test:val_str', {'value': 'hello'})
+        assert redis_client.validate('test:val_str') is True
+
+        # Number
+        redis_client.set('test:val_num', {'value': 42})
+        assert redis_client.validate('test:val_num') is True
+
+        # Boolean
+        redis_client.set('test:val_bool', {'value': True})
+        assert redis_client.validate('test:val_bool') is True
+
+        # Null
+        redis_client.set('test:val_null', {'value': None})
+        assert redis_client.validate('test:val_null') is True
+
+    def test_validate_arrays(self, redis_client):
+        """Test validating arrays."""
+        # Simple array
+        redis_client.set('test:val_arr', [1, 2, 3, 4, 5])
+        assert redis_client.validate('test:val_arr') is True
+
+        # Tabular array
+        users = [
+            {'id': 1, 'name': 'Alice'},
+            {'id': 2, 'name': 'Bob'}
+        ]
+        redis_client.set('test:val_tab', users)
+        assert redis_client.validate('test:val_tab') is True
+
+    def test_validate_complex_nested(self, redis_client):
+        """Test validating complex nested structures."""
+        data = {
+            'level1': {
+                'level2': {
+                    'level3': {
+                        'array': [1, 2, 3],
+                        'object': {'key': 'value'}
+                    }
+                },
+                'sibling': ['a', 'b', 'c']
+            },
+            'top_array': [
+                {'nested': 'object1'},
+                {'nested': 'object2'}
+            ]
+        }
+        redis_client.set('test:val_complex', data)
+        assert redis_client.validate('test:val_complex') is True
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

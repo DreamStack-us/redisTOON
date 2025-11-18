@@ -325,26 +325,26 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 ## 🗺️ Roadmap
 
-### Phase 1: Foundation (Current)
-- [ ] Core TOON encoder/decoder in C
-- [ ] Basic Redis module structure
-- [ ] Essential commands (SET, GET, DEL)
-- [ ] JSON conversion (FROMJSON, TOJSON)
+### Phase 1: Foundation ✅ COMPLETE
+- [x] Core TOON encoder/decoder in C
+- [x] Basic Redis module structure
+- [x] Essential commands (SET, GET, DEL)
+- [x] JSON conversion (FROMJSON, TOJSON)
 
-### Phase 2: Advanced Operations
-- [ ] Path-based queries (JSONPath-like)
-- [ ] Array operations (APPEND, INSERT, POP)
-- [ ] Merge and update operations
-- [ ] Format validation
+### Phase 2: Advanced Operations ✅ COMPLETE
+- [x] Path-based queries (JSONPath-like)
+- [x] Array operations (ARRAPPEND, ARRINSERT, ARRPOP, ARRLEN)
+- [x] Merge and update operations (MERGE)
+- [x] Format validation (VALIDATE)
 
-### Phase 3: Optimization
+### Phase 3: Optimization (Current)
 - [ ] Memory-efficient storage
 - [ ] Query performance optimization
 - [ ] Batch operations
 - [ ] Streaming large datasets
 
-### Phase 4: Ecosystem
-- [ ] Python client library
+### Phase 4: Ecosystem (Partially Complete)
+- [x] Python client library
 - [ ] Node.js client library
 - [ ] Go client library
 - [ ] LangChain integration

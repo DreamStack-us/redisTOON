@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="redistoon",
-    version="0.1.0",
+    version="0.2.0",
     author="DreamStack",
     author_email="dev@dreamstack.us",
     description="Python client for redisTOON - Redis module for Token-Oriented Object Notation",

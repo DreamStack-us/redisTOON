@@ -8,7 +8,7 @@
 #include <stdbool.h>
 
 // Version information
-#define REDISTOON_VERSION "0.1.0"
+#define REDISTOON_VERSION "0.2.0"
 #define REDISTOON_MODULE_NAME "redisTOON"
 
 // TOON value types
@@ -87,6 +87,18 @@ int toon_path_delete(ToonValue *root, const char *path);
 // Utility functions
 const char *toon_type_string(ToonType type);
 size_t toon_estimate_tokens(ToonValue *value);
+
+// Array operations
+int toon_array_append(ToonValue *root, const char *path, ToonValue **values, size_t num_values);
+int toon_array_insert(ToonValue *root, const char *path, long index, ToonValue *value);
+ToonValue *toon_array_pop(ToonValue *root, const char *path, long index);
+long toon_array_length(ToonValue *root, const char *path);
+
+// Merge operations
+int toon_merge(ToonValue *target, ToonValue *source);
+
+// Validation
+bool toon_validate(ToonValue *value, char **error);
 
 // Redis Module Type
 extern RedisModuleType *ToonType_RMT;

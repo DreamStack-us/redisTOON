@@ -185,6 +185,154 @@ class RedisTOON:
         """
         return self.redis.execute_command('TOON.TOKENCOUNT', key, path)
 
+    def array_append(self, key: str, path: str, *values) -> int:
+        """
+        Append one or more values to an array.
+
+        Args:
+            key: Redis key name
+            path: JSONPath to array
+            *values: Values to append (can be Python objects)
+
+        Returns:
+            New length of the array
+
+        Example:
+            >>> r.array_append('doc', '$.tags', 'new-tag', 'another-tag')
+            5
+        """
+        try:
+            from toon import encode
+            toon_values = [encode(v) if not isinstance(v, str) else v for v in values]
+        except ImportError:
+            # Fallback: use JSON encoding
+            toon_values = [json.dumps(v) if not isinstance(v, str) else v for v in values]
+
+        return self.redis.execute_command('TOON.ARRAPPEND', key, path, *toon_values)
+
+    def array_insert(self, key: str, path: str, index: int, value: Any) -> int:
+        """
+        Insert a value into an array at a specific index.
+
+        Args:
+            key: Redis key name
+            path: JSONPath to array
+            index: Index to insert at (can be negative)
+            value: Value to insert
+
+        Returns:
+            New length of the array
+
+        Example:
+            >>> r.array_insert('doc', '$.tags', 0, 'first-tag')
+            4
+        """
+        try:
+            from toon import encode
+            toon_value = encode(value) if not isinstance(value, str) else value
+        except ImportError:
+            toon_value = json.dumps(value) if not isinstance(value, str) else value
+
+        return self.redis.execute_command('TOON.ARRINSERT', key, path, index, toon_value)
+
+    def array_pop(self, key: str, path: str, index: int = -1) -> Optional[Any]:
+        """
+        Pop (remove and return) a value from an array.
+
+        Args:
+            key: Redis key name
+            path: JSONPath to array
+            index: Index to pop (default: -1 for last element)
+
+        Returns:
+            The popped value or None
+
+        Example:
+            >>> r.array_pop('doc', '$.tags')
+            'last-tag'
+        """
+        toon_str = self.redis.execute_command('TOON.ARRPOP', key, path, index)
+
+        if toon_str is None:
+            return None
+
+        try:
+            from toon import decode
+            return decode(toon_str.decode('utf-8'))
+        except ImportError:
+            # If it looks like JSON, parse it
+            try:
+                return json.loads(toon_str.decode('utf-8'))
+            except:
+                return toon_str.decode('utf-8')
+
+    def array_length(self, key: str, path: str) -> Optional[int]:
+        """
+        Get the length of an array.
+
+        Args:
+            key: Redis key name
+            path: JSONPath to array
+
+        Returns:
+            Length of the array or None
+
+        Example:
+            >>> r.array_length('doc', '$.tags')
+            3
+        """
+        return self.redis.execute_command('TOON.ARRLEN', key, path)
+
+    def merge(self, key: str, path: str, value: dict) -> bool:
+        """
+        Merge a TOON object with another object.
+
+        Args:
+            key: Redis key name
+            path: JSONPath to object
+            value: Object to merge (will be deep merged)
+
+        Returns:
+            True if successful
+
+        Example:
+            >>> r.merge('user:1', '$', {'extra': 'data', 'age': 31})
+            True
+        """
+        try:
+            from toon import encode
+            toon_str = encode(value)
+        except ImportError:
+            # Fallback: convert through JSON
+            json_str = json.dumps(value)
+            temp_key = '__temp_merge__'
+            self.from_json(temp_key, value)
+            toon_str = self.redis.execute_command('TOON.GET', temp_key)
+            self.redis.delete(temp_key)
+
+        result = self.redis.execute_command('TOON.MERGE', key, path, toon_str)
+        return result == b'OK'
+
+    def validate(self, key: str) -> bool:
+        """
+        Validate TOON document structure.
+
+        Args:
+            key: Redis key name
+
+        Returns:
+            True if valid, False otherwise
+
+        Example:
+            >>> r.validate('user:1')
+            True
+        """
+        try:
+            result = self.redis.execute_command('TOON.VALIDATE', key)
+            return result == b'OK'
+        except:
+            return False
+
     def compare_efficiency(self, data: dict) -> dict:
         """
         Compare token efficiency between JSON and TOON formats.

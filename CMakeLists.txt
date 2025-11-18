@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(redisTOON VERSION 0.1.0 LANGUAGES C)
+project(redisTOON VERSION 0.2.0 LANGUAGES C)
 
 # Set C standard
 set(CMAKE_C_STANDARD 11)
@@ -33,6 +33,7 @@ set(REDISTOON_SOURCES
     src/toon_memory.c
     src/toon_json.c
     src/toon_path.c
+    src/toon_operations.c
 )
 
 # Build shared library

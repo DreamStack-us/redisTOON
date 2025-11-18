@@ -404,6 +404,334 @@ int ToonTokenCount_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, i
 }
 
 // ============================================================================
+// Command: TOON.ARRAPPEND key path value [value ...]
+// ============================================================================
+
+int ToonArrAppend_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (argc < 4) {
+        return RedisModule_WrongArity(ctx);
+    }
+
+    RedisModule_AutoMemory(ctx);
+
+    RedisModuleKey *key = RedisModule_OpenKey(ctx, argv[1], REDISMODULE_READ | REDISMODULE_WRITE);
+
+    int type = RedisModule_KeyType(key);
+    if (type == REDISMODULE_KEYTYPE_EMPTY) {
+        return RedisModule_ReplyWithError(ctx, "ERR key does not exist");
+    }
+
+    if (type != REDISMODULE_KEYTYPE_MODULE ||
+        RedisModule_ModuleTypeGetType(key) != ToonType_RMT) {
+        return RedisModule_ReplyWithError(ctx, REDISMODULE_ERRORMSG_WRONGTYPE);
+    }
+
+    ToonDocument *doc = RedisModule_ModuleTypeGetValue(key);
+    if (!doc || !doc->root) {
+        return RedisModule_ReplyWithError(ctx, "ERR invalid document");
+    }
+
+    size_t path_len;
+    const char *path = RedisModule_StringPtrLen(argv[2], &path_len);
+
+    // Parse values to append
+    size_t num_values = argc - 3;
+    ToonValue **values = malloc(sizeof(ToonValue *) * num_values);
+
+    for (size_t i = 0; i < num_values; i++) {
+        size_t val_len;
+        const char *val_str = RedisModule_StringPtrLen(argv[3 + i], &val_len);
+
+        char *error = NULL;
+        values[i] = toon_decode(val_str, &error);
+        if (!values[i]) {
+            // Clean up
+            for (size_t j = 0; j < i; j++) {
+                toon_value_free(values[j]);
+            }
+            free(values);
+            RedisModule_ReplyWithError(ctx, error ? error : "ERR invalid value");
+            if (error) free(error);
+            return REDISMODULE_OK;
+        }
+    }
+
+    int result = toon_array_append(doc->root, path, values, num_values);
+    free(values);  // Note: values array ownership transferred
+
+    if (result < 0) {
+        return RedisModule_ReplyWithError(ctx, "ERR array append failed");
+    }
+
+    RedisModule_ReplyWithLongLong(ctx, result);
+    RedisModule_ReplicateVerbatim(ctx);
+
+    return REDISMODULE_OK;
+}
+
+// ============================================================================
+// Command: TOON.ARRINSERT key path index value
+// ============================================================================
+
+int ToonArrInsert_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (argc != 5) {
+        return RedisModule_WrongArity(ctx);
+    }
+
+    RedisModule_AutoMemory(ctx);
+
+    RedisModuleKey *key = RedisModule_OpenKey(ctx, argv[1], REDISMODULE_READ | REDISMODULE_WRITE);
+
+    int type = RedisModule_KeyType(key);
+    if (type == REDISMODULE_KEYTYPE_EMPTY) {
+        return RedisModule_ReplyWithError(ctx, "ERR key does not exist");
+    }
+
+    if (type != REDISMODULE_KEYTYPE_MODULE ||
+        RedisModule_ModuleTypeGetType(key) != ToonType_RMT) {
+        return RedisModule_ReplyWithError(ctx, REDISMODULE_ERRORMSG_WRONGTYPE);
+    }
+
+    ToonDocument *doc = RedisModule_ModuleTypeGetValue(key);
+    if (!doc || !doc->root) {
+        return RedisModule_ReplyWithError(ctx, "ERR invalid document");
+    }
+
+    size_t path_len;
+    const char *path = RedisModule_StringPtrLen(argv[2], &path_len);
+
+    long long index;
+    if (RedisModule_StringToLongLong(argv[3], &index) != REDISMODULE_OK) {
+        return RedisModule_ReplyWithError(ctx, "ERR invalid index");
+    }
+
+    size_t val_len;
+    const char *val_str = RedisModule_StringPtrLen(argv[4], &val_len);
+
+    char *error = NULL;
+    ToonValue *value = toon_decode(val_str, &error);
+    if (!value) {
+        RedisModule_ReplyWithError(ctx, error ? error : "ERR invalid value");
+        if (error) free(error);
+        return REDISMODULE_OK;
+    }
+
+    int result = toon_array_insert(doc->root, path, index, value);
+
+    if (result < 0) {
+        toon_value_free(value);
+        return RedisModule_ReplyWithError(ctx, "ERR array insert failed");
+    }
+
+    RedisModule_ReplyWithLongLong(ctx, result);
+    RedisModule_ReplicateVerbatim(ctx);
+
+    return REDISMODULE_OK;
+}
+
+// ============================================================================
+// Command: TOON.ARRPOP key path [index]
+// ============================================================================
+
+int ToonArrPop_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (argc < 3 || argc > 4) {
+        return RedisModule_WrongArity(ctx);
+    }
+
+    RedisModule_AutoMemory(ctx);
+
+    RedisModuleKey *key = RedisModule_OpenKey(ctx, argv[1], REDISMODULE_READ | REDISMODULE_WRITE);
+
+    int type = RedisModule_KeyType(key);
+    if (type == REDISMODULE_KEYTYPE_EMPTY) {
+        return RedisModule_ReplyWithNull(ctx);
+    }
+
+    if (type != REDISMODULE_KEYTYPE_MODULE ||
+        RedisModule_ModuleTypeGetType(key) != ToonType_RMT) {
+        return RedisModule_ReplyWithError(ctx, REDISMODULE_ERRORMSG_WRONGTYPE);
+    }
+
+    ToonDocument *doc = RedisModule_ModuleTypeGetValue(key);
+    if (!doc || !doc->root) {
+        return RedisModule_ReplyWithNull(ctx);
+    }
+
+    size_t path_len;
+    const char *path = RedisModule_StringPtrLen(argv[2], &path_len);
+
+    long long index = -1;  // Default to last element
+    if (argc == 4) {
+        if (RedisModule_StringToLongLong(argv[3], &index) != REDISMODULE_OK) {
+            return RedisModule_ReplyWithError(ctx, "ERR invalid index");
+        }
+    }
+
+    ToonValue *popped = toon_array_pop(doc->root, path, index);
+    if (!popped) {
+        return RedisModule_ReplyWithNull(ctx);
+    }
+
+    char *result = toon_encode(popped, 0);
+    toon_value_free(popped);
+
+    if (result) {
+        RedisModule_ReplyWithStringBuffer(ctx, result, strlen(result));
+        free(result);
+    } else {
+        return RedisModule_ReplyWithNull(ctx);
+    }
+
+    RedisModule_ReplicateVerbatim(ctx);
+
+    return REDISMODULE_OK;
+}
+
+// ============================================================================
+// Command: TOON.ARRLEN key path
+// ============================================================================
+
+int ToonArrLen_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (argc != 3) {
+        return RedisModule_WrongArity(ctx);
+    }
+
+    RedisModule_AutoMemory(ctx);
+
+    RedisModuleKey *key = RedisModule_OpenKey(ctx, argv[1], REDISMODULE_READ);
+
+    int type = RedisModule_KeyType(key);
+    if (type == REDISMODULE_KEYTYPE_EMPTY) {
+        return RedisModule_ReplyWithNull(ctx);
+    }
+
+    if (type != REDISMODULE_KEYTYPE_MODULE ||
+        RedisModule_ModuleTypeGetType(key) != ToonType_RMT) {
+        return RedisModule_ReplyWithError(ctx, REDISMODULE_ERRORMSG_WRONGTYPE);
+    }
+
+    ToonDocument *doc = RedisModule_ModuleTypeGetValue(key);
+    if (!doc || !doc->root) {
+        return RedisModule_ReplyWithNull(ctx);
+    }
+
+    size_t path_len;
+    const char *path = RedisModule_StringPtrLen(argv[2], &path_len);
+
+    long len = toon_array_length(doc->root, path);
+
+    if (len < 0) {
+        return RedisModule_ReplyWithNull(ctx);
+    }
+
+    RedisModule_ReplyWithLongLong(ctx, len);
+
+    return REDISMODULE_OK;
+}
+
+// ============================================================================
+// Command: TOON.MERGE key path value
+// ============================================================================
+
+int ToonMerge_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (argc != 4) {
+        return RedisModule_WrongArity(ctx);
+    }
+
+    RedisModule_AutoMemory(ctx);
+
+    RedisModuleKey *key = RedisModule_OpenKey(ctx, argv[1], REDISMODULE_READ | REDISMODULE_WRITE);
+
+    int type = RedisModule_KeyType(key);
+    if (type == REDISMODULE_KEYTYPE_EMPTY) {
+        return RedisModule_ReplyWithError(ctx, "ERR key does not exist");
+    }
+
+    if (type != REDISMODULE_KEYTYPE_MODULE ||
+        RedisModule_ModuleTypeGetType(key) != ToonType_RMT) {
+        return RedisModule_ReplyWithError(ctx, REDISMODULE_ERRORMSG_WRONGTYPE);
+    }
+
+    ToonDocument *doc = RedisModule_ModuleTypeGetValue(key);
+    if (!doc || !doc->root) {
+        return RedisModule_ReplyWithError(ctx, "ERR invalid document");
+    }
+
+    size_t path_len;
+    const char *path = RedisModule_StringPtrLen(argv[2], &path_len);
+
+    size_t value_len;
+    const char *value_str = RedisModule_StringPtrLen(argv[3], &value_len);
+
+    char *error = NULL;
+    ToonValue *source = toon_decode(value_str, &error);
+    if (!source) {
+        RedisModule_ReplyWithError(ctx, error ? error : "ERR invalid TOON format");
+        if (error) free(error);
+        return REDISMODULE_OK;
+    }
+
+    ToonValue *target = toon_path_get(doc->root, path);
+    if (!target) {
+        toon_value_free(source);
+        return RedisModule_ReplyWithError(ctx, "ERR path not found");
+    }
+
+    if (toon_merge(target, source) != 0) {
+        toon_value_free(source);
+        return RedisModule_ReplyWithError(ctx, "ERR merge failed (both values must be objects)");
+    }
+
+    toon_value_free(source);
+
+    RedisModule_ReplyWithSimpleString(ctx, "OK");
+    RedisModule_ReplicateVerbatim(ctx);
+
+    return REDISMODULE_OK;
+}
+
+// ============================================================================
+// Command: TOON.VALIDATE key
+// ============================================================================
+
+int ToonValidate_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (argc != 2) {
+        return RedisModule_WrongArity(ctx);
+    }
+
+    RedisModule_AutoMemory(ctx);
+
+    RedisModuleKey *key = RedisModule_OpenKey(ctx, argv[1], REDISMODULE_READ);
+
+    int type = RedisModule_KeyType(key);
+    if (type == REDISMODULE_KEYTYPE_EMPTY) {
+        return RedisModule_ReplyWithNull(ctx);
+    }
+
+    if (type != REDISMODULE_KEYTYPE_MODULE ||
+        RedisModule_ModuleTypeGetType(key) != ToonType_RMT) {
+        return RedisModule_ReplyWithError(ctx, REDISMODULE_ERRORMSG_WRONGTYPE);
+    }
+
+    ToonDocument *doc = RedisModule_ModuleTypeGetValue(key);
+    if (!doc || !doc->root) {
+        return RedisModule_ReplyWithError(ctx, "ERR invalid document");
+    }
+
+    char *error = NULL;
+    bool valid = toon_validate(doc->root, &error);
+
+    if (valid) {
+        RedisModule_ReplyWithSimpleString(ctx, "OK");
+    } else {
+        RedisModule_ReplyWithError(ctx, error ? error : "ERR validation failed");
+        if (error) free(error);
+    }
+
+    return REDISMODULE_OK;
+}
+
+// ============================================================================
 // Module Initialization
 // ============================================================================
 
@@ -459,6 +787,36 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     }
 
     if (RedisModule_CreateCommand(ctx, "toon.tokencount", ToonTokenCount_RedisCommand,
+                                   "readonly", 1, 1, 1) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    if (RedisModule_CreateCommand(ctx, "toon.arrappend", ToonArrAppend_RedisCommand,
+                                   "write deny-oom", 1, 1, 1) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    if (RedisModule_CreateCommand(ctx, "toon.arrinsert", ToonArrInsert_RedisCommand,
+                                   "write deny-oom", 1, 1, 1) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    if (RedisModule_CreateCommand(ctx, "toon.arrpop", ToonArrPop_RedisCommand,
+                                   "write", 1, 1, 1) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    if (RedisModule_CreateCommand(ctx, "toon.arrlen", ToonArrLen_RedisCommand,
+                                   "readonly", 1, 1, 1) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    if (RedisModule_CreateCommand(ctx, "toon.merge", ToonMerge_RedisCommand,
+                                   "write deny-oom", 1, 1, 1) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    if (RedisModule_CreateCommand(ctx, "toon.validate", ToonValidate_RedisCommand,
                                    "readonly", 1, 1, 1) == REDISMODULE_ERR) {
         return REDISMODULE_ERR;
     }
